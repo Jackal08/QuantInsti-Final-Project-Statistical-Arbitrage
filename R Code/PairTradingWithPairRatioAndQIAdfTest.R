@@ -61,7 +61,7 @@ GenerateRowValue <- function(begin, end, csvData){
 #Generate trading signals based on a z-score of 1 and -1
 GenerateSignal <- function(counter, csvData){
   #Trigger and close represent the entry and exit zones (value refers to the z-score value)
-  trigger  <- 1.25
+  trigger  <- 1
   close  <-  0.5
   
   currentSignal <- csvData$signal[counter]
@@ -256,12 +256,12 @@ GenerateReport.xts <- function(returns, startDate = '2005-01-01', endDate = '201
 }
 
 #The function that will be called by the user to backtest a pair
-BacktestPair <- function(pairData, mean = 35, slippage = -0.0025, startDate = '2005-01-01', endDate = '2014-11-23', generate.report = TRUE){
+BacktestPair <- function(pairData, mean = 35, slippage = -0.0025, adfTest = TRUE, criticalValue = -2.58,
+                         startDate = '2005-01-01', endDate = '2014-11-23', generate.report = TRUE){
   # At 150 data points
   # Critical value at 1% : -3.46
   # Critical value at 5% : -2.88
   # Critical value at 10% : -2.57
-  cirtValue  <- -2.58 #Critical Value used in the ADF Test
   
   #Prepare the initial dataframe by adding columns and pre calculations
   pairData <- PrepareData(pairData)
@@ -279,15 +279,19 @@ BacktestPair <- function(pairData, mean = 35, slippage = -0.0025, startDate = '2
       
       #ADF Test 
       #120 - 90 - 60 
-      if(adf.test(pairData$spread[(i-120):end], k = 1)[1] <= cirtValue){
-        if(adf.test(pairData$spread[(i-90):end], k = 1)[1] <= cirtValue){
-          if(adf.test(pairData$spread[(i-60):end], k = 1)[1] <= cirtValue){
-            #If co-integrated then set the ADFTest value to true / 1
-            pairData$adfTest[end]  <-  1           
+      if(adfTest == FALSE){
+        pairData$adfTest[end]  <-  1 
+      }
+      else {
+        if(adf.test(pairData$spread[(i-120):end], k = 1)[1] <= criticalValue){
+          if(adf.test(pairData$spread[(i-90):end], k = 1)[1] <= criticalValue){
+            if(adf.test(pairData$spread[(i-60):end], k = 1)[1] <= criticalValue){
+              #If co-integrated then set the ADFTest value to true / 1
+              pairData$adfTest[end]  <-  1           
+            }
           }
         }
       }
-      
       #Calculate the remainder variables needed
       if(i >= mean){
         #Generate Row values
@@ -357,9 +361,6 @@ BacktestPortfolio  <- function(names, leverage = 1, startDate = '2005-01-01', en
   return(returns)
 }
 
-#Mock test to make sure everything is running
-data <- read.csv('investec.csv') 
-a <- BacktestPair(data, 35)
 
 ########################################################################################
 ##                                    Portfolios                                      ##
@@ -535,10 +536,21 @@ GenerateReport.xts(mining.return.series * leverage)
 ##############################
 #         Stat Arb           #
 ##############################
-data <- read.csv('investec.csv') 
-investec <- BacktestPair(data, 35) 
+leverage <- 3
 
+#Investec
+data <- read.csv('investec.csv') 
+investec <- BacktestPair(data, 35, generate.report = T, AdfTest = F) 
+
+investec.returns  <-  xts(investec[,18] * leverage, investec$Date)
+GenerateReport.xts(investec.returns)
+
+#Mondi
 data <- read.csv('mondi.csv') 
-mondi <- BacktestPair(data, 35) 
+mondi <- BacktestPair(data, 35, AdfTest = F)
+
+mondi.returns  <-  xts(mondi[,18] * leverage, mondi$Date)
+GenerateReport.xts(mondi.returns)
+
 
 
