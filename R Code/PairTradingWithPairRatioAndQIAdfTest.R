@@ -61,7 +61,7 @@ GenerateRowValue <- function(begin, end, csvData){
 #Generate trading signals based on a z-score of 1 and -1
 GenerateSignal <- function(counter, csvData){
   #Trigger and close represent the entry and exit zones (value refers to the z-score value)
-  trigger  <- 1
+  trigger  <- 1.25
   close  <-  0.5
   
   currentSignal <- csvData$signal[counter]
@@ -256,7 +256,7 @@ GenerateReport.xts <- function(returns, startDate = '2005-01-01', endDate = '201
 }
 
 #The function that will be called by the user to backtest a pair
-BacktestPair <- function(pairData, mean = 35, slippage = -0.0014, startDate = '2005-01-01', endDate = '2014-11-23', generate.report = TRUE){
+BacktestPair <- function(pairData, mean = 35, slippage = -0.0025, startDate = '2005-01-01', endDate = '2014-11-23', generate.report = TRUE){
   # At 150 data points
   # Critical value at 1% : -3.46
   # Critical value at 5% : -2.88
@@ -362,7 +362,7 @@ data <- read.csv('investec.csv')
 a <- BacktestPair(data, 35)
 
 ########################################################################################
-##                 Portfolio COnstruction for in sample test                          ##
+##                                    Portfolios                                      ##
 ########################################################################################
 
 ##############################
@@ -374,23 +374,21 @@ data <- read.csv('groupppc.csv')
 data <- read.csv('groupavenge.csv')
 data <- read.csv('groupwhbo.csv')   
 data <- read.csv('mrppc.csv')
-data <- read.csv('mrwhbo.csv')      
+data <- read.csv('mrwhbo.csv')   #Exclude in out-of-sample   
 data <- read.csv('mravenge.csv')    
-data <- read.csv('ppcwhbo.csv')     
-data <- read.csv('ppcavenge.csv')   
+data <- read.csv('ppcwhbo.csv')  #Exclude in out-of-sample    
+data <- read.csv('ppcavenge.csv') #Exclude in out-of-sample  
 
-a <- BacktestPair(data, 35)
+a <- BacktestPair(data, 35, endDate = '2014-06-01')
 
-
-##Run this section if you want a portfolio of construction companies
+##Out-of-Sample Test 
 names  <- c('groupmr.csv', 'groupppc.csv', 'groupavenge.csv', 'groupwhbo.csv', 
-            'mrppc.csv', 'mrwhbo.csv', 'mravenge.csv', 'ppcwhbo.csv', 'ppcavenge.csv')
+            'mrppc.csv', 'mravenge.csv')
 
-return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
+construction.return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23', leverage = 4)
 
-##Run this code if you want to see the full series (from begining of data to end)
-leverage <- 1
-GenerateReport.xts(return.series * leverage)
+##Full sample
+GenerateReport.xts(construction.return.series)
 
 ##############################
 #         Insurance          #
@@ -400,21 +398,20 @@ data <- read.csv('disclib.csv')
 data <- read.csv('discmmi.csv') 
 data <- read.csv('discsanlam.csv')   
 data <- read.csv('libmmi.csv')    
-data <- read.csv('mmiold.csv') )
+data <- read.csv('mmiold.csv') 
 data <- read.csv('mmisanlam.csv')  
 data <- read.csv('oldsanlam.csv') 
 
-a <- BacktestPair(data, 35)
+a <- BacktestPair(data, 35, endDate = '2014-06-01')
 
-##Run this section if you want a portfolio of construction companies
+##Run this section if you want a portfolio
 names  <- c('disclib.csv', 'discmmi.csv', 'discsanlam.csv', 'libmmi.csv', 'mmiold.csv',
             'mmisanlam.csv', 'oldsanlam.csv')
 
-return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
+insurance.return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23', leverage = 4)
 
 ##Run this code if you want to see the full series (from begining of data to end)
-leverage <- 1
-GenerateReport.xts(return.series * leverage)
+GenerateReport.xts(insurance.return.series)
 
 ##############################
 #     Wireless Telecoms      #
@@ -448,96 +445,92 @@ data <- read.csv('corpsg.csv')
 a <- BacktestPair(data, 35)
 
 
-##Run this section if you want a portfolio of construction companies
+##Run this section if you want a portfolio
 names  <- c('corpsg.csv', 'corbrait.csv', 'corsasfin.csv', 'corpere.csv', 'psgbrait.csv',
             'psgsas.csv', 'psgpere.csv', 'braitsas.csv', 'braitpere.csv', 'saspere.csv')
 
-return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
+finance.return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
 
 ##Run this code if you want to see the full series (from begining of data to end)
 leverage <- 1
-GenerateReport.xts(return.series * leverage)
+GenerateReport.xts(finance.return.series * leverage)
 
 
 ##############################
 #          Banking           # 
 ############################## 
+##Use this section to test individual pairs
 data <- read.csv('absaned.csv')  
-a <- BacktestPair(data, 35)
 data <- read.csv('absarmb.csv')  
-b <- BacktestPair(data, 35)
 data <- read.csv('firstabsa.csv') 
-c <- BacktestPair(data, 35)
 data <- read.csv('firstned.csv') 
-d <- BacktestPair(data, 35)
 data <- read.csv('firstrmb.csv') 
-e <- BacktestPair(data, 35)
 data <- read.csv('nedrmb.csv')   
-f <- BacktestPair(data, 35)
 data <- read.csv('sbkabsa.csv')  
-g <- BacktestPair(data, 35)
 data <- read.csv('sbkfirst.csv') 
-h <- BacktestPair(data, 35)
 data <- read.csv('sbkned.csv')   
-i <- BacktestPair(data, 35)
 data <- read.csv('sbkrmb.csv')   
-j <- BacktestPair(data, 35)
 
-answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] + f[,18] + g[,18] + h[,18] + i[,18] + j[,18]
-answer <- answer / 10
+a <- BacktestPair(data, 35)
 
-returns  <-  xts(answer, as.Date(a$Date))
-charts.PerformanceSummary(returns)
+
+##Run this section if you want a portfolio
+names  <- c('sbkrmb.csv', 'sbkned.csv', 'sbkfirst.csv', 'sbkabsa.csv', 'nedrmb.csv', 'firstrmb.csv',
+            'firstned.csv', 'firstabsa.csv',  'absarmb.csv', 'absaned.csv')
+
+banking.return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
+
+##Run this code if you want to see the full series (from begining of data to end)
+leverage <- 1
+GenerateReport.xts(banking.return.series * leverage)
 
 ##############################
 #        Gen Retail          # 
 ##############################
+##Use this section to test individual pairs
 data <- read.csv('MRTFG.csv')    
-a <- BacktestPair(data, 35)
 data <- read.csv('trutfg.csv')   
-b <- BacktestPair(data, 35)
 data <- read.csv('trumr.csv')    
-c <- BacktestPair(data, 35)
 data <- read.csv('wooltfg.csv')  
-d <- BacktestPair(data, 35)
 data <- read.csv('woolmr.csv')   
-e <- BacktestPair(data, 35)
 data <- read.csv('wooltru.csv')  
-f <- BacktestPair(data, 35)
 
-answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] +f[,18] 
-answer <- answer / 6
+a <- BacktestPair(data, 35)
 
-returns  <-  xts(answer, as.Date(a$Date))
-charts.PerformanceSummary(returns)
+##Run this section if you want a portfolio
+names  <- c('wooltru.csv', 'woolmr.csv', 'wooltfg.csv', 'trumr.csv', 'trutfg.csv', 'MRTFG.csv')
+
+retail.return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
+
+##Run this code if you want to see the full series (from begining of data to end)
+leverage <- 1
+GenerateReport.xts(retail.return.series * leverage)
+
 
 ##############################
 #           Mining           # 
 ##############################
-##Very few are profitable in the sample space
+##Use this section to test individual pairs
 data <- read.csv('anglogoldamerican.csv') 
-a <- BacktestPair(data, 35)
 data <- read.csv('anglogoldplat.csv') 
-b <- BacktestPair(data, 35)
 data <- read.csv('angloplatamerican.csv') 
-c <- BacktestPair(data, 35)
 data <- read.csv('bhpanglo.csv') 
-d <- BacktestPair(data, 35)
 data <- read.csv('gfianglo.csv') 
-e <- BacktestPair(data, 35)
 data <- read.csv('haranglo.csv') 
-f <- BacktestPair(data, 35)
 data <- read.csv('hargfi.csv')   
-g <- BacktestPair(data, 35)
 data <- read.csv('impanglo.csv') 
-h <- BacktestPair(data, 35)
 
+a <- BacktestPair(data, 35)
 
-answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] + f[,18] + g[,18] + h[,18]
-answer <- answer / 8
+##Run this section if you want a portfolio
+names  <- c('impanglo.csv', 'hargfi.csv', 'haranglo.csv',  'gfianglo.csv', 'bhpanglo.csv', 
+            'angloplatamerican.csv', 'anglogoldplat.csv', 'anglogoldamerican.csv')
 
-returns = xts(answer, as.Date(a$Date))
-charts.PerformanceSummary(returns)
+mining.return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
+
+##Run this code if you want to see the full series (from begining of data to end)
+leverage <- 1
+GenerateReport.xts(mining.return.series * leverage)
 
 ##############################
 #         Stat Arb           #
@@ -549,84 +542,3 @@ data <- read.csv('mondi.csv')
 mondi <- BacktestPair(data, 35) 
 
 
-########################################################################################
-##                 Portfolio COnstruction for out-of-sample test                      ##
-########################################################################################
-##Out of sample test with an equaly weighted portfolio
-
-##Final Out of sample test for 2015 year
-startDate  <-  '2014-11-01'
-endDate  <- '2015-11-23'
-
-#StatArb
-data <- read.csv('investec.csv') 
-a <- BacktestPair(data, 35) 
-
-#Mining
-data <- read.csv('angloplatamerican.csv') 
-b <- BacktestPair(data, 35)
-data <- read.csv('gfianglo.csv') 
-c <- BacktestPair(data, 35)
-data <- read.csv('impanglo.csv') 
-d <- BacktestPair(data, 35)
-
-#Gen Retail
-data <- read.csv('MRTFG.csv')    
-e <- BacktestPair(data, 35)
-data <- read.csv('trutfg.csv')   
-f <- BacktestPair(data, 35)
-data <- read.csv('trumr.csv')    
-g <- BacktestPair(data, 35)
-data <- read.csv('wooltru.csv')  
-h <- BacktestPair(data, 35)
-
-#Banks
-data <- read.csv('absaned.csv')  
-i <- BacktestPair(data, 35)
-data <- read.csv('absarmb.csv')  
-j <- BacktestPair(data, 35)
-data <- read.csv('firstabsa.csv') 
-k <- BacktestPair(data, 35)
-data <- read.csv('firstned.csv') 
-l <- BacktestPair(data, 35)
-data <- read.csv('firstrmb.csv') 
-m <- BacktestPair(data, 35)
-data <- read.csv('sbkabsa.csv')  
-n <- BacktestPair(data, 35)
-data <- read.csv('sbkfirst.csv') 
-o <- BacktestPair(data, 35)
-data <- read.csv('sbkned.csv')   
-p <- BacktestPair(data, 35)
-data <- read.csv('sbkrmb.csv')   
-q <- BacktestPair(data, 35)
-
-#Fin Services
-data <- read.csv('braitsas.csv')  
-r <- BacktestPair(data, 35)
-data <- read.csv('corpere.csv')   
-s <- BacktestPair(data, 35)
-
-#Construction
-data <- read.csv('groupppc.csv')    
-t <- BacktestPair(data, 35)
-data <- read.csv('groupavenge.csv') 
-u <- BacktestPair(data, 35)
-data <- read.csv('groupwhbo.csv')   
-v <- BacktestPair(data, 35)
-data <- read.csv('mrppc.csv')       
-w <- BacktestPair(data, 35)
-data <- read.csv('mrwhbo.csv')      
-x <- BacktestPair(data, 35)
-data <- read.csv('mravenge.csv')    
-y <- BacktestPair(data, 35)
-data <- read.csv('ppcwhbo.csv')     
-z <- BacktestPair(data, 35)
-data <- read.csv('ppcavenge.csv') 
-aa <- BacktestPair(data, 35)
-
-answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] + f[,18] + g[,18] + h[,18] + i[,18] + j[,18] + k[,18] + l[,18] + m[,18] + n[,18] + o[,18] + p[,18] + q[,18] + r[,18] + s[,18] + t[,18] + u[,18] + v[,18] + w[,18] + x[,18] + y[,18] + z[,18] + aa[,18]
-answer <- answer / 27
-
-#Subset the date to the out of sample dates selected
-returns = xts(answer*5, as.Date(a$Date))
-GenerateReport.xts(returns, '2005-01-01','2015-11-23')
