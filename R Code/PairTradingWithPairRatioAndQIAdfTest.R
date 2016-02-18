@@ -2,11 +2,11 @@
 ##                        Imports and set working directory                           ##
 ########################################################################################
 require(tseries)
-require(urca)
+require(urca) #Used for the ADF Test
 require(PerformanceAnalytics)
 
-##Change this to match where you stored the csv files
-setwd("C:/Users/Administrator/Desktop/QUantInsti Project/database/fulllist")
+##Change this to match where you stored the csv files folder name FullList
+setwd("C:\\Users\\Administrator\\Documents\\GitHub\\QuantInsti-Final-Project-Statistical-Arbitrage\\database\\FullList")
 
 ########################################################################################
 ##                                    Functions                                       ##
@@ -16,7 +16,7 @@ PrepareData <- function(csvData){
   #Calculate the Pair Ratio
   csvData$pairRatio  <-  csvData[,2] / csvData[,3]
   
-  #Add the columns
+  #Add columns to the DF
   csvData <- AddColumns(csvData)
   
   #Make sure that the date column is not read in as a vector of characters
@@ -45,7 +45,7 @@ AddColumns <- function(csvData){
   return(csvData)
 }
 
-#Calculate mean, stdDev, z-score, 
+#Calculate mean, stdDev, and z-score for the given Row [end]
 GenerateRowValue <- function(begin, end, csvData){
   average <- mean(csvData$spread[begin:end])
   stdev <- sd(csvData$spread[begin:end])
@@ -58,26 +58,33 @@ GenerateRowValue <- function(begin, end, csvData){
   
 }
 
-#Generate trading signals based on a z-score of 2 and -2
+#Generate trading signals based on a z-score of 1 and -1
 GenerateSignal <- function(counter, csvData){
+  #Trigger and close represent the entry and exit zones (value refers to the z-score value)
   trigger  <- 1
   close  <-  0.5
   
   currentSignal <- csvData$signal[counter]
   prevSignal <- csvData$signal[counter-1]
   
+  #Set trading signal for the given [end] row
   if(csvData$adfTest[counter] == 1)
   {
+    #If there is a change in signal from long to short then you must allow for the 
+    #current trade to first be closed
     if(currentSignal == -1 && prevSignal == 1)
       csvData$signal[counter] <- 0
     else if(currentSignal == 1 && prevSignal == -1)
       csvData$signal[counter] <- 0
     
+    #Create a long / short signal if the current z-score is larger / smaller than the trigger value
+    #(respectively)
     else if(csvData$zScore[counter] > trigger)
       csvData$signal[counter] <- -1
     else if (csvData$zScore[counter] < -trigger)
       csvData$signal[counter] <- 1
     
+    #Close the position if z-score is beteween the two "close" values
     else if (csvData$zScore[counter] < close && csvData$zScore[counter] > -close)
       csvData$signal[counter] <- 0
     else 
@@ -92,12 +99,17 @@ GenerateSignal <- function(counter, csvData){
 #Transactions based on trade signal
 #Following the framework set out initially by QuantInsti (Note: this can be coded better) 
 GenerateTransactions <- function(currentSignal, prevSignal, end, csvData){
-  #Set Long Prices
+  #In a pair trading strategy you need to go long one share and short the other
+  #and then reverse the transaction when you close
+  
+  ##First Leg of the trade (Set Long position)
+  #If there is no change in signal
   if(currentSignal == 0 && prevSignal == 0)
     csvData$BuyPrice[end] <- 0    
   else if(currentSignal == prevSignal)
     csvData$BuyPrice[end] <- csvData$BuyPrice[end-1]     
   
+  #If the signals point to a new trade
   #Short B and Long A
   else if(currentSignal == 1 && currentSignal != prevSignal)
     csvData$BuyPrice[end] <- csvData[end, 2] 
@@ -110,18 +122,19 @@ GenerateTransactions <- function(currentSignal, prevSignal, end, csvData){
   #Close trades
   else if(currentSignal == 0 && prevSignal == 1)
     csvData$BuyPrice[end] <- csvData[end, 2] 
-  else if(currentSignal == 0 && prevSignal == -1){
-    csvData$BuyPrice[end] <- csvData[end, 3] * transactionPairRatio
-    
-  }
+  else if(currentSignal == 0 && prevSignal == -1)
+    csvData$BuyPrice[end] <- csvData[end, 3] * transactionPairRatio  
   
-  #Set Short Prices
+  
+  
+  ##Second Leg of the trade (Set Short position)
+  ##Set Short Prices if there is no change in signal
   if(currentSignal == 0 && prevSignal == 0)
     csvData$SellPrice[end] <- 0    
   else if(currentSignal == prevSignal)
     csvData$SellPrice[end] <- csvData$SellPrice[end-1] 
   
-  #Open Trades
+  #If the signals point to a new trade
   else if(currentSignal == 1 && currentSignal != prevSignal){
     csvData$SellPrice[end] <- csvData[end, 3] * csvData$pairRatio[end]
     transactionPairRatio <<- csvData$pairRatio[end]
@@ -142,9 +155,11 @@ GenerateTransactions <- function(currentSignal, prevSignal, end, csvData){
 #Calculate the returns generated after each transaction
 #Add implementation shortfall / slippage
 GetReturns <- function(end, csvData, slippage){
+  #Calculate the returns generated on each leg of the deal (the long and the short position)
+  #Long leg of the trade
   if(csvData$signal[end] == 0 && csvData$signal[end-1] != 0 )
     csvData$LongReturn[end] <- (csvData$BuyPrice[end] / csvData$BuyPrice[end-1]) - 1
-  
+  #Short Leg of the trade
   if(csvData$signal[end] == 0 && csvData$signal[end-1] != 0 )
     csvData$ShortReturn[end] <- (csvData$SellPrice[end-1] / csvData$SellPrice[end]) - 1
   
@@ -152,6 +167,7 @@ GetReturns <- function(end, csvData, slippage){
   if(csvData$ShortReturn[end] != 0)
     csvData$Slippage[end] <- slippage
   
+  #If a trade was closed then calculate the total return
   if(csvData$ShortReturn[end] != 0 && csvData$LongReturn[end] != 0)
     csvData$TotalReturn[end] <- ((csvData$ShortReturn[end] + csvData$LongReturn[end]) / 2) + csvData$Slippage[end]
   
@@ -178,6 +194,7 @@ GenerateReport <- function(pairData, startDate, endDate){
   profitsVector  <- c()
   lossesVector  <- c()
   
+  #loop through the data to find the + & - trades and total trades
   for(i in returns){
     if(i != 0){
       totalTrades  <- totalTrades + 1
@@ -191,13 +208,15 @@ GenerateReport <- function(pairData, startDate, endDate){
     }
   }
   
+  #Print the results to the console
   print(paste("Total Trades: ", totalTrades))
   print(paste("Success Rate: ", positiveTrades/totalTrades))
   print(paste("PnL Ratio: ", mean(profitsVector)/mean(lossesVector*-1)))
-  print(table.Drawdowns(returns)[,1:4])
+  print(table.Drawdowns(returns))
   
 }
-GenerateReport.xts <- function(returns, startDate, endDate){
+#Use this one if you have the returns in xts format and want to generate a report
+GenerateReport.xts <- function(returns, startDate = '2005-01-01', endDate = '2015-11-23'){
   returns  <-  returns[paste(startDate,endDate,sep="::")]
   
   #Plot
@@ -214,6 +233,7 @@ GenerateReport.xts <- function(returns, startDate, endDate){
   profitsVector  <- c()
   lossesVector  <- c()
   
+  #Itterate through data to get the + & - trades
   for(i in returns){
     if(i != 0){
       totalTrades  <- totalTrades + 1
@@ -227,26 +247,28 @@ GenerateReport.xts <- function(returns, startDate, endDate){
     }
   }
   
+  #Print results to Console
   print(paste("Total Trades: ", totalTrades))
   print(paste("Success Rate: ", positiveTrades/totalTrades))
   print(paste("PnL Ratio: ", mean(profitsVector)/mean(lossesVector*-1)))
-  print(table.Drawdowns(returns)[,1:4])
+  print(table.Drawdowns(returns))
   
 }
 
-#The function that will be called by the user
-pairTradeBacktest <- function(pairData, mean = 35, slippage = -0.0014, startDate = '2005-01-01', endDate = '2014-11-23'){
+#The function that will be called by the user to backtest a pair
+BacktestPair <- function(pairData, mean = 35, slippage = -0.0014, startDate = '2005-01-01', endDate = '2014-11-23', generate.report = TRUE){
   # At 150 data points
   # Critical value at 1% : -3.46
   # Critical value at 5% : -2.88
   # Critical value at 10% : -2.57
-  cirtValue  <- -2.58
+  cirtValue  <- -2.58 #Critical Value used in the ADF Test
   
   #Prepare the initial dataframe by adding columns and pre calculations
   pairData <- PrepareData(pairData)
   
   #Itterate through each day in the time series
   for(i in 1:length(pairData[,2])){
+    #For each day after the amount of days needed to run the ADF test
     if(i > 130){
       begin  <-  i - mean + 1
       end  <-  i
@@ -260,170 +282,206 @@ pairTradeBacktest <- function(pairData, mean = 35, slippage = -0.0014, startDate
       if(adf.test(pairData$spread[(i-120):end], k = 1)[1] <= cirtValue){
         if(adf.test(pairData$spread[(i-90):end], k = 1)[1] <= cirtValue){
           if(adf.test(pairData$spread[(i-60):end], k = 1)[1] <= cirtValue){
+            #If co-integrated then set the ADFTest value to true / 1
             pairData$adfTest[end]  <-  1           
           }
         }
       }
       
-      #Calculate the remainder variables
+      #Calculate the remainder variables needed
       if(i >= mean){
+        #Generate Row values
         pairData <- GenerateRowValue(begin, end, pairData)
+        #Generate the Signals
         pairData <- GenerateSignal(i, pairData)
         
         currentSignal  <-  pairData$signal[i]
         prevSignal  <-  pairData$signal[i-1]
         
+        #Generate Transactions
         pairData <- GenerateTransactions(currentSignal, prevSignal, i, pairData)
         
+        #Get the returns with added slippage
         pairData <- GetReturns(i, pairData, slippage)
       }
     }
   }
   
-  GenerateReport(pairData, startDate, endDate)
+  if(generate.report == TRUE)
+    GenerateReport(pairData, startDate, endDate)
   
   return(pairData)
 }
 
+#An equally weighted portfolio of shares
+BacktestPortfolio  <- function(names, leverage = 1, startDate = '2005-01-01', endDate = '2015-11-23'){
+  ##Itterates through all the pairs and backtests each one
+  ##stores the data in a list of numerical vectors
+  returns.list  <- list()
+  counter  <-  F
+  ticker  <- 1
+  for (name in names){
+    #A notification to let you know how far it is
+    print(paste(ticker, " of ", length(names)))
+    ticker  <- ticker + 1
+    
+    #Run the backtest on the pair
+    data <- read.csv(name)   
+    BackTest.df <- BacktestPair(data, 35, generate.report = FALSE)
+    
+    #Store the dates in a seperate vector
+    if (counter == F){
+      dates  <<- as.Date(BackTest.df$Date)
+      counter  <- T
+    }
+    
+    #Append to list
+    returns.list  <- c(returns.list, list(BackTest.df[,18]))
+  }
+  
+  ##Aggregates the returns for each day and then calculates the average for each day
+  total.returns  <- c()
+  for (i in 1:length(returns.list)){
+    if(i == 1)
+      total.returns = returns.list[[i]]
+    else
+      total.returns = total.returns + returns.list[[i]]
+  }
+  
+  total.returns <- total.returns / length(returns.list)
+  
+  ##Generate a report for the portfolio
+  returns  <-  xts(total.returns * leverage, dates)
+  GenerateReport.xts(returns, startDate, endDate)
+  
+  return(returns)
+}
+
+#Mock test to make sure everything is running
 data <- read.csv('investec.csv') 
-a <- pairTradeBacktest(data, 35) #Yes
+a <- BacktestPair(data, 35)
 
 ########################################################################################
 ##                 Portfolio COnstruction for in sample test                          ##
 ########################################################################################
 
 ##############################
-#   Construction companies   # No
+#   Construction companies   # 
 ##############################
-data <- read.csv('groupmr.csv')     #No
-a <- pairTradeBacktest(data, 35)
-data <- read.csv('groupppc.csv')    #Yes
-b <- pairTradeBacktest(data, 35)
-data <- read.csv('groupavenge.csv') #Yes
-c <- pairTradeBacktest(data, 35)
-data <- read.csv('groupwhbo.csv')   #Yes
-d <- pairTradeBacktest(data, 35)
-data <- read.csv('mrppc.csv')       #Yes
-e <- pairTradeBacktest(data, 35)
-data <- read.csv('mrwhbo.csv')      #Yes
-f <- pairTradeBacktest(data, 35)
-data <- read.csv('mravenge.csv')    #Yes
-g <- pairTradeBacktest(data, 35)
-data <- read.csv('ppcwhbo.csv')     #Yes
-h <- pairTradeBacktest(data, 35)
-data <- read.csv('ppcavenge.csv')   #No
-i <- pairTradeBacktest(data, 35)
+##Use this section to test individual pairs
+data <- read.csv('groupmr.csv')     
+data <- read.csv('groupppc.csv')    
+data <- read.csv('groupavenge.csv')
+data <- read.csv('groupwhbo.csv')   
+data <- read.csv('mrppc.csv')
+data <- read.csv('mrwhbo.csv')      
+data <- read.csv('mravenge.csv')    
+data <- read.csv('ppcwhbo.csv')     
+data <- read.csv('ppcavenge.csv')   
 
-answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] + f[,18] + g[,18] + h[,18] + i[,18]
-answer <- answer / 9
+a <- BacktestPair(data, 35)
 
-returns  <-  xts(answer, as.Date(a$Date))
-charts.PerformanceSummary(returns)
+
+##Run this section if you want a portfolio of construction companies
+names  <- c('groupmr.csv', 'groupppc.csv', 'groupavenge.csv', 'groupwhbo.csv', 
+            'mrppc.csv', 'mrwhbo.csv', 'mravenge.csv', 'ppcwhbo.csv', 'ppcavenge.csv')
+
+return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
+
+##Run this code if you want to see the full series (from begining of data to end)
+leverage <- 1
+GenerateReport.xts(return.series * leverage)
 
 ##############################
 #         Insurance          #
 ##############################
-data <- read.csv('disclib.csv')   #
-a <- pairTradeBacktest(data, 35)
-data <- read.csv('discmmi.csv') #
-b <- pairTradeBacktest(data, 35)
-data <- read.csv('discsanlam.csv')   #
-c <- pairTradeBacktest(data, 35)
-data <- read.csv('libmmi.csv')    #
-d <- pairTradeBacktest(data, 35)
-data <- read.csv('mmiold.csv') #
-e <- pairTradeBacktest(data, 35)
-data <- read.csv('mmisanlam.csv')  #
-f <- pairTradeBacktest(data, 35)
-data <- read.csv('oldsanlam.csv')    #
-g <- pairTradeBacktest(data, 35)
+##Use this section to test individual pairs
+data <- read.csv('disclib.csv')   
+data <- read.csv('discmmi.csv') 
+data <- read.csv('discsanlam.csv')   
+data <- read.csv('libmmi.csv')    
+data <- read.csv('mmiold.csv') )
+data <- read.csv('mmisanlam.csv')  
+data <- read.csv('oldsanlam.csv') 
 
-answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] + f[,18] + g[,18]
-answer <- answer / 7
+a <- BacktestPair(data, 35)
 
-returns  <-  xts(answer, as.Date(a$Date))
-charts.PerformanceSummary(returns)
+##Run this section if you want a portfolio of construction companies
+names  <- c('disclib.csv', 'discmmi.csv', 'discsanlam.csv', 'libmmi.csv', 'mmiold.csv',
+            'mmisanlam.csv', 'oldsanlam.csv')
+
+return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
+
+##Run this code if you want to see the full series (from begining of data to end)
+leverage <- 1
+GenerateReport.xts(return.series * leverage)
 
 ##############################
 #     Wireless Telecoms      #
 ##############################
 data <- read.csv('MTNVODA.csv')   
-a <- pairTradeBacktest(data, 35, startDate = '2010-01-01', endDate = '2015-11-23')
-
-
-answer <- a[,18]
-
-returns  <-  xts(answer, as.Date(a$Date))
-charts.PerformanceSummary(returns)
+a <- BacktestPair(data, 35, startDate = '2010-01-01', endDate = '2015-11-23')
 
 ##############################
 #           Paper            #
 ##############################
 
 data <- read.csv('YorkSappi.csv')   
-a <- pairTradeBacktest(data, 35)
-
-
-answer <- a[,18]
-
-returns  <-  xts(answer, as.Date(a$Date))
-charts.PerformanceSummary(returns)
-
-##############################
-#        fin services        # No
-##############################
-#very few candidates would be selected for the out of sample test
-data <- read.csv('saspere.csv')   #No
-a <- pairTradeBacktest(data, 35)
-data <- read.csv('braitpere.csv') #No
-b <- pairTradeBacktest(data, 35)
-data <- read.csv('braitsas.csv')  #Yes
-c <- pairTradeBacktest(data, 35)
-data <- read.csv('psgpere.csv')   #No
-d <- pairTradeBacktest(data, 35)
-data <- read.csv('psgsas.csv')    #No
-e <- pairTradeBacktest(data, 35)
-data <- read.csv('psgbrait.csv')  #No
-f <- pairTradeBacktest(data, 35)
-data <- read.csv('corpere.csv')   #Yes
-g <- pairTradeBacktest(data, 35)
-data <- read.csv('corsasfin.csv') #No
-h <- pairTradeBacktest(data, 35)
-data <- read.csv('corbrait.csv')  #No
-i <- pairTradeBacktest(data, 35)
-data <- read.csv('corpsg.csv')    #No
-j <- pairTradeBacktest(data, 35)
-
-answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] + f[,18] + g[,18] + h[,18] + i[,18] + j[,18]
-answer <- answer / 10
-
-returns  <-  xts(answer, as.Date(a$Date))
-charts.PerformanceSummary(returns)
+a <- BacktestPair(data, 35)
 
 
 ##############################
-#          Banking           # No
+#        fin services        # 
+##############################
+##Use this section to test individual pairs
+data <- read.csv('saspere.csv')   
+data <- read.csv('braitpere.csv') 
+data <- read.csv('braitsas.csv')  
+data <- read.csv('psgpere.csv')   
+data <- read.csv('psgsas.csv')    
+data <- read.csv('psgbrait.csv')  
+data <- read.csv('corpere.csv')   
+data <- read.csv('corsasfin.csv') 
+data <- read.csv('corbrait.csv')  
+data <- read.csv('corpsg.csv')    
+
+a <- BacktestPair(data, 35)
+
+
+##Run this section if you want a portfolio of construction companies
+names  <- c('corpsg.csv', 'corbrait.csv', 'corsasfin.csv', 'corpere.csv', 'psgbrait.csv',
+            'psgsas.csv', 'psgpere.csv', 'braitsas.csv', 'braitpere.csv', 'saspere.csv')
+
+return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
+
+##Run this code if you want to see the full series (from begining of data to end)
+leverage <- 1
+GenerateReport.xts(return.series * leverage)
+
+
+##############################
+#          Banking           # 
 ############################## 
-data <- read.csv('absaned.csv')  #Yes
-a <- pairTradeBacktest(data, 35)
-data <- read.csv('absarmb.csv')  #Yes
-b <- pairTradeBacktest(data, 35)
-data <- read.csv('firstabsa.csv') #Yes
-c <- pairTradeBacktest(data, 35)
-data <- read.csv('firstned.csv') #Yes
-d <- pairTradeBacktest(data, 35)
-data <- read.csv('firstrmb.csv') #Yes
-e <- pairTradeBacktest(data, 35)
-data <- read.csv('nedrmb.csv')   #No
-f <- pairTradeBacktest(data, 35)
-data <- read.csv('sbkabsa.csv')  #Yes
-g <- pairTradeBacktest(data, 35)
-data <- read.csv('sbkfirst.csv') #No
-h <- pairTradeBacktest(data, 35)
-data <- read.csv('sbkned.csv')   #Yes
-i <- pairTradeBacktest(data, 35)
-data <- read.csv('sbkrmb.csv')   #Yes
-j <- pairTradeBacktest(data, 35)
+data <- read.csv('absaned.csv')  
+a <- BacktestPair(data, 35)
+data <- read.csv('absarmb.csv')  
+b <- BacktestPair(data, 35)
+data <- read.csv('firstabsa.csv') 
+c <- BacktestPair(data, 35)
+data <- read.csv('firstned.csv') 
+d <- BacktestPair(data, 35)
+data <- read.csv('firstrmb.csv') 
+e <- BacktestPair(data, 35)
+data <- read.csv('nedrmb.csv')   
+f <- BacktestPair(data, 35)
+data <- read.csv('sbkabsa.csv')  
+g <- BacktestPair(data, 35)
+data <- read.csv('sbkfirst.csv') 
+h <- BacktestPair(data, 35)
+data <- read.csv('sbkned.csv')   
+i <- BacktestPair(data, 35)
+data <- read.csv('sbkrmb.csv')   
+j <- BacktestPair(data, 35)
 
 answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] + f[,18] + g[,18] + h[,18] + i[,18] + j[,18]
 answer <- answer / 10
@@ -432,20 +490,20 @@ returns  <-  xts(answer, as.Date(a$Date))
 charts.PerformanceSummary(returns)
 
 ##############################
-#        Gen Retail          # No
+#        Gen Retail          # 
 ##############################
-data <- read.csv('MRTFG.csv')    #Yes
-a <- pairTradeBacktest(data, 35)
-data <- read.csv('trutfg.csv')   #Yes
-b <- pairTradeBacktest(data, 35)
-data <- read.csv('trumr.csv')    #no
-c <- pairTradeBacktest(data, 35)
-data <- read.csv('wooltfg.csv')  #
-d <- pairTradeBacktest(data, 35)
-data <- read.csv('woolmr.csv')   #No
-e <- pairTradeBacktest(data, 35)
-data <- read.csv('wooltru.csv')  #Yes
-f <- pairTradeBacktest(data, 35)
+data <- read.csv('MRTFG.csv')    
+a <- BacktestPair(data, 35)
+data <- read.csv('trutfg.csv')   
+b <- BacktestPair(data, 35)
+data <- read.csv('trumr.csv')    
+c <- BacktestPair(data, 35)
+data <- read.csv('wooltfg.csv')  
+d <- BacktestPair(data, 35)
+data <- read.csv('woolmr.csv')   
+e <- BacktestPair(data, 35)
+data <- read.csv('wooltru.csv')  
+f <- BacktestPair(data, 35)
 
 answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] +f[,18] 
 answer <- answer / 6
@@ -454,25 +512,25 @@ returns  <-  xts(answer, as.Date(a$Date))
 charts.PerformanceSummary(returns)
 
 ##############################
-#           Mining           # No
+#           Mining           # 
 ##############################
 ##Very few are profitable in the sample space
-data <- read.csv('anglogoldamerican.csv') #No
-a <- pairTradeBacktest(data, 35)
-data <- read.csv('anglogoldplat.csv') #No
-b <- pairTradeBacktest(data, 35)
-data <- read.csv('angloplatamerican.csv') #Yes
-c <- pairTradeBacktest(data, 35)
-data <- read.csv('bhpanglo.csv') #No
-d <- pairTradeBacktest(data, 35)
-data <- read.csv('gfianglo.csv') #Yes
-e <- pairTradeBacktest(data, 35)
-data <- read.csv('haranglo.csv') #No
-f <- pairTradeBacktest(data, 35)
-data <- read.csv('hargfi.csv')   #No
-g <- pairTradeBacktest(data, 35)
-data <- read.csv('impanglo.csv') #Yes
-h <- pairTradeBacktest(data, 35)
+data <- read.csv('anglogoldamerican.csv') 
+a <- BacktestPair(data, 35)
+data <- read.csv('anglogoldplat.csv') 
+b <- BacktestPair(data, 35)
+data <- read.csv('angloplatamerican.csv') 
+c <- BacktestPair(data, 35)
+data <- read.csv('bhpanglo.csv') 
+d <- BacktestPair(data, 35)
+data <- read.csv('gfianglo.csv') 
+e <- BacktestPair(data, 35)
+data <- read.csv('haranglo.csv') 
+f <- BacktestPair(data, 35)
+data <- read.csv('hargfi.csv')   
+g <- BacktestPair(data, 35)
+data <- read.csv('impanglo.csv') 
+h <- BacktestPair(data, 35)
 
 
 answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] + f[,18] + g[,18] + h[,18]
@@ -485,28 +543,11 @@ charts.PerformanceSummary(returns)
 #         Stat Arb           #
 ##############################
 data <- read.csv('investec.csv') 
-investec <- pairTradeBacktest(data, 35) #Yes
+investec <- BacktestPair(data, 35) 
 
 data <- read.csv('mondi.csv') 
-mondi <- pairTradeBacktest(data, 35) #Yes
+mondi <- BacktestPair(data, 35) 
 
-
-
-answer <- (a[,18] + b[,18])/2
-
-answer <- a[,18]
-returnsLeverage = xts(answer*4, as.Date(a$Date))
-returnsStandard = xts(answer, as.Date(a$Date))
-
-
-GenerateReport.xts(returnsStandard, '2008-01-01', '2013-01-01')
-GenerateReport.xts(returnsLeverage, '2008-01-01', '2013-01-01')
-
-GenerateReport.xts(returnsStandard, '2013-01-02', '2015-11-23')
-GenerateReport.xts(returnsLeverage, '2013-01-02', '2015-11-23')
-
-data <- read.csv('wescza.csv') 
-investec <- pairTradeBacktest(data, 35) #Yes
 
 ########################################################################################
 ##                 Portfolio COnstruction for out-of-sample test                      ##
@@ -519,69 +560,69 @@ endDate  <- '2015-11-23'
 
 #StatArb
 data <- read.csv('investec.csv') 
-a <- pairTradeBacktest(data, 35) #Yes
+a <- BacktestPair(data, 35) 
 
 #Mining
-data <- read.csv('angloplatamerican.csv') #Yes
-b <- pairTradeBacktest(data, 35)
-data <- read.csv('gfianglo.csv') #Yes
-c <- pairTradeBacktest(data, 35)
-data <- read.csv('impanglo.csv') #Yes
-d <- pairTradeBacktest(data, 35)
+data <- read.csv('angloplatamerican.csv') 
+b <- BacktestPair(data, 35)
+data <- read.csv('gfianglo.csv') 
+c <- BacktestPair(data, 35)
+data <- read.csv('impanglo.csv') 
+d <- BacktestPair(data, 35)
 
 #Gen Retail
-data <- read.csv('MRTFG.csv')    #Yes
-e <- pairTradeBacktest(data, 35)
-data <- read.csv('trutfg.csv')   #Yes
-f <- pairTradeBacktest(data, 35)
-data <- read.csv('trumr.csv')    #Yes
-g <- pairTradeBacktest(data, 35)
-data <- read.csv('wooltru.csv')  #Yes
-h <- pairTradeBacktest(data, 35)
+data <- read.csv('MRTFG.csv')    
+e <- BacktestPair(data, 35)
+data <- read.csv('trutfg.csv')   
+f <- BacktestPair(data, 35)
+data <- read.csv('trumr.csv')    
+g <- BacktestPair(data, 35)
+data <- read.csv('wooltru.csv')  
+h <- BacktestPair(data, 35)
 
 #Banks
-data <- read.csv('absaned.csv')  #Yes
-i <- pairTradeBacktest(data, 35)
-data <- read.csv('absarmb.csv')  #Yes
-j <- pairTradeBacktest(data, 35)
-data <- read.csv('firstabsa.csv') #Yes
-k <- pairTradeBacktest(data, 35)
-data <- read.csv('firstned.csv') #Yes
-l <- pairTradeBacktest(data, 35)
-data <- read.csv('firstrmb.csv') #Yes
-m <- pairTradeBacktest(data, 35)
-data <- read.csv('sbkabsa.csv')  #Yes
-n <- pairTradeBacktest(data, 35)
-data <- read.csv('sbkfirst.csv') #YEs
-o <- pairTradeBacktest(data, 35)
-data <- read.csv('sbkned.csv')   #Yes
-p <- pairTradeBacktest(data, 35)
-data <- read.csv('sbkrmb.csv')   #Yes
-q <- pairTradeBacktest(data, 35)
+data <- read.csv('absaned.csv')  
+i <- BacktestPair(data, 35)
+data <- read.csv('absarmb.csv')  
+j <- BacktestPair(data, 35)
+data <- read.csv('firstabsa.csv') 
+k <- BacktestPair(data, 35)
+data <- read.csv('firstned.csv') 
+l <- BacktestPair(data, 35)
+data <- read.csv('firstrmb.csv') 
+m <- BacktestPair(data, 35)
+data <- read.csv('sbkabsa.csv')  
+n <- BacktestPair(data, 35)
+data <- read.csv('sbkfirst.csv') 
+o <- BacktestPair(data, 35)
+data <- read.csv('sbkned.csv')   
+p <- BacktestPair(data, 35)
+data <- read.csv('sbkrmb.csv')   
+q <- BacktestPair(data, 35)
 
 #Fin Services
-data <- read.csv('braitsas.csv')  #Yes
-r <- pairTradeBacktest(data, 35)
-data <- read.csv('corpere.csv')   #Yes
-s <- pairTradeBacktest(data, 35)
+data <- read.csv('braitsas.csv')  
+r <- BacktestPair(data, 35)
+data <- read.csv('corpere.csv')   
+s <- BacktestPair(data, 35)
 
 #Construction
-data <- read.csv('groupppc.csv')    #Yes
-t <- pairTradeBacktest(data, 35)
-data <- read.csv('groupavenge.csv') #Yes
-u <- pairTradeBacktest(data, 35)
-data <- read.csv('groupwhbo.csv')   #Yes
-v <- pairTradeBacktest(data, 35)
-data <- read.csv('mrppc.csv')       #Yes
-w <- pairTradeBacktest(data, 35)
-data <- read.csv('mrwhbo.csv')      #Yes
-x <- pairTradeBacktest(data, 35)
-data <- read.csv('mravenge.csv')    #Yes
-y <- pairTradeBacktest(data, 35)
-data <- read.csv('ppcwhbo.csv')     #Yes
-z <- pairTradeBacktest(data, 35)
-data <- read.csv('ppcavenge.csv')   #Yes
-aa <- pairTradeBacktest(data, 35)
+data <- read.csv('groupppc.csv')    
+t <- BacktestPair(data, 35)
+data <- read.csv('groupavenge.csv') 
+u <- BacktestPair(data, 35)
+data <- read.csv('groupwhbo.csv')   
+v <- BacktestPair(data, 35)
+data <- read.csv('mrppc.csv')       
+w <- BacktestPair(data, 35)
+data <- read.csv('mrwhbo.csv')      
+x <- BacktestPair(data, 35)
+data <- read.csv('mravenge.csv')    
+y <- BacktestPair(data, 35)
+data <- read.csv('ppcwhbo.csv')     
+z <- BacktestPair(data, 35)
+data <- read.csv('ppcavenge.csv') 
+aa <- BacktestPair(data, 35)
 
 answer <- a[,18] + b[,18] + c[,18] + d[,18] + e[,18] + f[,18] + g[,18] + h[,18] + i[,18] + j[,18] + k[,18] + l[,18] + m[,18] + n[,18] + o[,18] + p[,18] + q[,18] + r[,18] + s[,18] + t[,18] + u[,18] + v[,18] + w[,18] + x[,18] + y[,18] + z[,18] + aa[,18]
 answer <- answer / 27
