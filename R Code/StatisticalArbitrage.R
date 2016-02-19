@@ -16,6 +16,10 @@ PrepareData <- function(csvData){
   #Calculate the Pair Ratio
   csvData$pairRatio  <-  csvData[,2] / csvData[,3]
   
+  #Calculate the log prices of the two time series
+  csvData$LogA <- log10(csvData[,2])
+  csvData$LogB <- log10(csvData[,3])
+  
   #Add columns to the DF
   csvData <- AddColumns(csvData)
   
@@ -25,10 +29,6 @@ PrepareData <- function(csvData){
   return(csvData)
 }
 AddColumns <- function(csvData){
-  #Calculate the log prices of the two time series
-  csvData$LogA <- log10(csvData[,2])
-  csvData$LogB <- log10(csvData[,3])
-  
   #Add Columns to csvDataframe
   csvData$spread <- 0
   csvData$adfTest <- 0
@@ -42,6 +42,7 @@ AddColumns <- function(csvData){
   csvData$ShortReturn <- 0
   csvData$Slippage <- 0
   csvData$TotalReturn <- 0
+  
   return(csvData)
 }
 
@@ -58,7 +59,7 @@ GenerateRowValue <- function(begin, end, csvData){
   
 }
 
-#Generate trading signals based on a z-score of 1 and -1
+#Generate trading signals based on a z-score of 1 and -1 
 GenerateSignal <- function(counter, csvData){
   #Trigger and close represent the entry and exit zones (value refers to the z-score value)
   trigger  <- 1
@@ -257,7 +258,7 @@ GenerateReport.xts <- function(returns, startDate = '2005-01-01', endDate = '201
 
 #The function that will be called by the user to backtest a pair
 BacktestPair <- function(pairData, mean = 35, slippage = -0.0025, adfTest = TRUE, criticalValue = -2.58,
-                         startDate = '2005-01-01', endDate = '2014-11-23', generate.report = TRUE){
+                         startDate = '2005-01-01', endDate = '2014-11-23', generateReport = TRUE){
   # At 150 data points
   # Critical value at 1% : -3.46
   # Critical value at 5% : -2.88
@@ -311,14 +312,14 @@ BacktestPair <- function(pairData, mean = 35, slippage = -0.0025, adfTest = TRUE
     }
   }
   
-  if(generate.report == TRUE)
+  if(generateReport == TRUE)
     GenerateReport(pairData, startDate, endDate)
   
   return(pairData)
 }
 
 #An equally weighted portfolio of shares
-BacktestPortfolio  <- function(names, leverage = 1, startDate = '2005-01-01', endDate = '2015-11-23'){
+BacktestPortfolio  <- function(names, mean = 35,leverage = 1, startDate = '2005-01-01', endDate = '2015-11-23'){
   ##Itterates through all the pairs and backtests each one
   ##stores the data in a list of numerical vectors
   returns.list  <- list()
@@ -331,7 +332,7 @@ BacktestPortfolio  <- function(names, leverage = 1, startDate = '2005-01-01', en
     
     #Run the backtest on the pair
     data <- read.csv(name)   
-    BackTest.df <- BacktestPair(data, 35, generate.report = FALSE)
+    BackTest.df <- BacktestPair(data, mean, generateReport = FALSE)
     
     #Store the dates in a seperate vector
     if (counter == F){
@@ -409,9 +410,8 @@ a <- BacktestPair(data, 35, endDate = '2014-06-01')
 names  <- c('disclib.csv', 'discmmi.csv', 'discsanlam.csv', 'libmmi.csv', 'mmiold.csv',
             'mmisanlam.csv', 'oldsanlam.csv')
 
-insurance.return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23', leverage = 4)
+insurance.return.series  <- BacktestPortfolio(names, leverage = 4)
 
-##Run this code if you want to see the full series (from begining of data to end)
 GenerateReport.xts(insurance.return.series)
 
 ##############################
@@ -540,14 +540,14 @@ leverage <- 3
 
 #Investec
 data <- read.csv('investec.csv') 
-investec <- BacktestPair(data, 35, generate.report = T, AdfTest = F) 
+investec <- BacktestPair(data, 35, generateReport = T, adfTest = F) 
 
 investec.returns  <-  xts(investec[,18] * leverage, investec$Date)
 GenerateReport.xts(investec.returns)
 
 #Mondi
 data <- read.csv('mondi.csv') 
-mondi <- BacktestPair(data, 35, AdfTest = F)
+mondi <- BacktestPair(data, 35, adfTest = F)
 
 mondi.returns  <-  xts(mondi[,18] * leverage, mondi$Date)
 GenerateReport.xts(mondi.returns)
