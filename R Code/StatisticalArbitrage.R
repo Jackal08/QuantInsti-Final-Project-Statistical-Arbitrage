@@ -6,7 +6,7 @@ require(urca) #Used for the ADF Test
 require(PerformanceAnalytics)
 
 ##Change this to match where you stored the csv files folder name FullList
-setwd("C:\\Users\\Administrator\\Documents\\GitHub\\QuantInsti-Final-Project-Statistical-Arbitrage\\database\\FullList")
+setwd("~/R/QuantInsti-Final-Project-Statistical-Arbitrage/database/FullList")
 
 ########################################################################################
 ##                                    Functions                                       ##
@@ -42,7 +42,8 @@ AddColumns <- function(csvData){
   csvData$ShortReturn <- 0
   csvData$Slippage <- 0
   csvData$TotalReturn <- 0
-  
+  csvData$TransactionRatio <- 0
+  csvData$TradeClose <- 0
   return(csvData)
 }
 
@@ -106,10 +107,14 @@ GenerateTransactions <- function(currentSignal, prevSignal, end, csvData){
   ##First Leg of the trade (Set Long position)
   #If there is no change in signal
   if(currentSignal == 0 && prevSignal == 0)
+  {
     csvData$BuyPrice[end] <- 0    
+    csvData$TransactionRatio[end]<-0
+  }
   else if(currentSignal == prevSignal)
-    csvData$BuyPrice[end] <- csvData$BuyPrice[end-1]     
-  
+  {    csvData$BuyPrice[end] <- csvData$BuyPrice[end-1]     
+  csvData$TransactionRatio[end]<-csvData$TransactionRatio[end-1]
+  }  
   #If the signals point to a new trade
   #Short B and Long A
   else if(currentSignal == 1 && currentSignal != prevSignal)
@@ -118,14 +123,16 @@ GenerateTransactions <- function(currentSignal, prevSignal, end, csvData){
   else if(currentSignal == -1 && currentSignal != prevSignal){
     csvData$BuyPrice[end] <- csvData[end, 3] * csvData$pairRatio[end]
     transactionPairRatio <<- csvData$pairRatio[end]
+    csvData$TransactionRatio[end]<- transactionPairRatio
   }
   
   #Close trades
   else if(currentSignal == 0 && prevSignal == 1)
     csvData$BuyPrice[end] <- csvData[end, 2] 
   else if(currentSignal == 0 && prevSignal == -1)
-    csvData$BuyPrice[end] <- csvData[end, 3] * transactionPairRatio  
-  
+  {csvData$TransactionRatio[end] = csvData$TransactionRatio[end-1]
+  csvData$BuyPrice[end] <- csvData[end, 3] * csvData$TransactionRatio[end]
+  }
   
   
   ##Second Leg of the trade (Set Short position)
@@ -139,13 +146,15 @@ GenerateTransactions <- function(currentSignal, prevSignal, end, csvData){
   else if(currentSignal == 1 && currentSignal != prevSignal){
     csvData$SellPrice[end] <- csvData[end, 3] * csvData$pairRatio[end]
     transactionPairRatio <<- csvData$pairRatio[end]
+    csvData$TransactionRatio[end]<- transactionPairRatio
   }
   else if(currentSignal == -1 && currentSignal != prevSignal)
     csvData$SellPrice[end] <- csvData[end, 2] 
   
   #Close trades
   else if(currentSignal == 0 && prevSignal == 1){
-    csvData$SellPrice[end] <- csvData[end, 3] * transactionPairRatio
+    csvData$TransactionRatio[end] = csvData$TransactionRatio[end-1]
+    csvData$SellPrice[end] <- csvData[end, 3] * csvData$TransactionRatio[end]
   }
   else if(currentSignal == 0 && prevSignal == -1)
     csvData$SellPrice[end] <- csvData[end, 2] 
@@ -159,18 +168,44 @@ GetReturns <- function(end, csvData, slippage){
   #Calculate the returns generated on each leg of the deal (the long and the short position)
   #Long leg of the trade
   if(csvData$signal[end] == 0 && csvData$signal[end-1] != 0 )
-    csvData$LongReturn[end] <- (csvData$BuyPrice[end] / csvData$BuyPrice[end-1]) - 1
+    csvData$LongReturn[end] <- log(csvData$BuyPrice[end] / csvData$BuyPrice[end-1])
   #Short Leg of the trade
   if(csvData$signal[end] == 0 && csvData$signal[end-1] != 0 )
-    csvData$ShortReturn[end] <- (csvData$SellPrice[end-1] / csvData$SellPrice[end]) - 1
+    csvData$ShortReturn[end] <- log(csvData$SellPrice[end-1] / csvData$SellPrice[end])
   
   #Add slippage
-  if(csvData$ShortReturn[end] != 0)
-    csvData$Slippage[end] <- slippage
-  
+  if(csvData$signal[end] == 0 && csvData$signal[end-1] != 0 )
+  {  csvData$Slippage[end] <- slippage
+  }  
   #If a trade was closed then calculate the total return
-  if(csvData$ShortReturn[end] != 0 && csvData$LongReturn[end] != 0)
-    csvData$TotalReturn[end] <- ((csvData$ShortReturn[end] + csvData$LongReturn[end]) / 2) + csvData$Slippage[end]
+  if(csvData$signal[end] == 0 && csvData$signal[end-1] != 0 )
+  {    csvData$TotalReturn[end] <- ((csvData$ShortReturn[end] + csvData$LongReturn[end]) / 2) + csvData$Slippage[end]
+  }  
+  return(csvData)
+}
+
+#Calculate daily returns generated 
+#Add implementation shortfall / slippage at close of trade
+GetReturnsDaily <- function(end, csvData, slippage){
+  #Calculate the returns generated on each leg of the deal (the long and the short position)
+  #Long leg of the trade
+  if(csvData$signal[end-1]>0){csvData$LongReturn[end] <- log(csvData[end,2] / csvData[end-1,2])}
+  else
+    if(csvData$signal[end-1]<0){csvData$LongReturn[end] <- log(csvData[end,3] / csvData[end-1,3])*csvData$TransactionRatio[end]}  
+  
+  #Short Leg of the trade
+  if(csvData$signal[end-1]>0){csvData$ShortReturn[end] <- -log(csvData[end,3] / csvData[end-1,3])*csvData$TransactionRatio[end]}
+  else
+    if(csvData$signal[end-1]<0){csvData$ShortReturn[end] <- -log(csvData[end,2] / csvData[end-1,2])}  
+  
+  #Add slippage
+  if(csvData$signal[end] == 0 && csvData$signal[end-1] != 0)
+  {
+    csvData$Slippage[end] <- slippage
+    csvData$TradeClose[end] <-1
+  }
+  #If a trade was closed then calculate the total return
+  csvData$TotalReturn[end] <- ((csvData$ShortReturn[end] + csvData$LongReturn[end]) / 2) + csvData$Slippage[end]
   
   return(csvData)
 }
@@ -180,7 +215,6 @@ GenerateReport <- function(pairData, startDate, endDate){
   #Subset the dates 
   returns  <-  xts(pairData$TotalReturn, as.Date(pairData$Date))
   returns  <-  returns[paste(startDate,endDate,sep="::")]
-  
   #Plot
   charts.PerformanceSummary(returns)
   
@@ -189,6 +223,10 @@ GenerateReport <- function(pairData, startDate, endDate){
   print(paste("Annualized Sharpe: " ,SharpeRatio.annualized(returns)))
   print(paste("Max Drawdown: ",maxDrawdown(returns)))
   
+  pairDataSub=  pairData[pairData$TradeClose==1,]
+  
+  returns_sub  <-  xts(pairDataSub$TotalReturn, as.Date(pairDataSub$Date))
+  returns_sub  <-  returns_sub[paste(startDate,endDate,sep="::")]  
   #var returns = xts object
   totalTrades  <-  0
   positiveTrades  <-  0
@@ -196,7 +234,7 @@ GenerateReport <- function(pairData, startDate, endDate){
   lossesVector  <- c()
   
   #loop through the data to find the + & - trades and total trades
-  for(i in returns){
+  for(i in returns_sub){
     if(i != 0){
       totalTrades  <- totalTrades + 1
       if(i > 0){
@@ -216,45 +254,17 @@ GenerateReport <- function(pairData, startDate, endDate){
   print(table.Drawdowns(returns))
   
 }
-#Use this one if you have the returns in xts format and want to generate a report
+
 GenerateReport.xts <- function(returns, startDate = '2005-01-01', endDate = '2015-11-23'){
-  returns  <-  returns[paste(startDate,endDate,sep="::")]
-  
-  #Plot
-  charts.PerformanceSummary(returns)
-  
   #Metrics
+  returns  <-  returns[paste(startDate,endDate,sep="::")]
   print(paste("Annual Returns: ",Return.annualized(returns)))
   print(paste("Annualized Sharpe: " ,SharpeRatio.annualized(returns)))
   print(paste("Max Drawdown: ",maxDrawdown(returns)))
-  
-  #var returns = xts object
-  totalTrades  <-  0
-  positiveTrades  <-  0
-  profitsVector  <- c()
-  lossesVector  <- c()
-  
-  #Itterate through data to get the + & - trades
-  for(i in returns){
-    if(i != 0){
-      totalTrades  <- totalTrades + 1
-      if(i > 0){
-        positiveTrades  <- positiveTrades + 1
-        profitsVector  <- c(profitsVector, i)
-      }
-      else if (i < 0){
-        lossesVector  <- c(lossesVector, i)
-      }
-    }
-  }
-  
-  #Print results to Console
-  print(paste("Total Trades: ", totalTrades))
-  print(paste("Success Rate: ", positiveTrades/totalTrades))
-  print(paste("PnL Ratio: ", mean(profitsVector)/mean(lossesVector*-1)))
   print(table.Drawdowns(returns))
   
 }
+
 
 #The function that will be called by the user to backtest a pair
 BacktestPair <- function(pairData, mean = 35, slippage = -0.0025, adfTest = TRUE, criticalValue = -2.58,
@@ -307,7 +317,8 @@ BacktestPair <- function(pairData, mean = 35, slippage = -0.0025, adfTest = TRUE
         pairData <- GenerateTransactions(currentSignal, prevSignal, i, pairData)
         
         #Get the returns with added slippage
-        pairData <- GetReturns(i, pairData, slippage)
+        pairData <- GetReturnsDaily(i, pairData, slippage)
+        
       }
     }
   }
@@ -371,10 +382,10 @@ BacktestPortfolio  <- function(names, mean = 35,leverage = 1, startDate = '2005-
 #   Construction companies   # 
 ##############################
 ##Use this section to test individual pairs
-data <- read.csv('groupmr.csv')     
-data <- read.csv('groupppc.csv')    
-data <- read.csv('groupavenge.csv')
-data <- read.csv('groupwhbo.csv')   
+data <- read.csv('GroupMR.csv')     
+data <- read.csv('GroupPPC.csv')    
+data <- read.csv('GroupAVENGE.csv')
+data <- read.csv('GroupWHBO.csv')   
 data <- read.csv('mrppc.csv')
 data <- read.csv('mrwhbo.csv')   #Exclude in out-of-sample   
 data <- read.csv('mravenge.csv')    
@@ -384,7 +395,7 @@ data <- read.csv('ppcavenge.csv') #Exclude in out-of-sample
 a <- BacktestPair(data, 35, endDate = '2014-06-01')
 
 ##Out-of-Sample Test 
-names  <- c('groupmr.csv', 'groupppc.csv', 'groupavenge.csv', 'groupwhbo.csv', 
+names  <- c('GroupMR.csv', 'GroupPPC.csv', 'GroupAVENGE.csv', 'GroupWHBO.csv', 
             'mrppc.csv', 'mravenge.csv')
 
 construction.return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23', leverage = 4)
@@ -407,8 +418,8 @@ data <- read.csv('oldsanlam.csv')
 a <- BacktestPair(data, 35, endDate = '2014-06-01')
 
 ##Run this section if you want a portfolio
-names  <- c('disclib.csv', 'discmmi.csv', 'discsanlam.csv', 'libmmi.csv', 'mmiold.csv',
-            'mmisanlam.csv', 'oldsanlam.csv')
+names  <- c('DiscLib.csv', 'DiscMMI.csv', 'DiscSanlam.csv', 'LibMMI.csv', 'MMIOld.csv',
+            'MMISanlam.csv', 'OldSanlam.csv')
 
 insurance.return.series  <- BacktestPortfolio(names, leverage = 4)
 
@@ -499,7 +510,7 @@ data <- read.csv('wooltru.csv')
 a <- BacktestPair(data, 35)
 
 ##Run this section if you want a portfolio
-names  <- c('wooltru.csv', 'woolmr.csv', 'wooltfg.csv', 'trumr.csv', 'trutfg.csv', 'MRTFG.csv')
+names  <- c('Wooltru.csv', 'WoolMr.csv', 'WoolTFG.csv', 'TRUMR.csv', 'TruTFG.csv', 'MRTFG.csv')
 
 retail.return.series  <- BacktestPortfolio(names, startDate = '2014-11-23', endDate = '2015-11-23')
 
@@ -539,8 +550,9 @@ GenerateReport.xts(mining.return.series * leverage)
 leverage <- 3
 
 #Investec
-data <- read.csv('investec.csv') 
+data <- read.csv('Investec.csv') 
 investec <- BacktestPair(data, 35, generateReport = T, adfTest = F) 
+
 
 investec.returns  <-  xts(investec[,18] * leverage, investec$Date)
 GenerateReport.xts(investec.returns)
